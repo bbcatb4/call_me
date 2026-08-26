@@ -5,3 +5,7 @@ Windows 11 本機工具：監測 LINE 電腦版的通知預覽，依規則與可
 請先閱讀 [使用說明](LineDutyNotifier/README.md)。
 
 此 repository 不包含任何 LINE 聊天匯出、通知記錄、個人群組名稱或 API 金鑰。請從 `LineDutyNotifier/appsettings.example.json` 複製建立本機的 `appsettings.json`。
+
+## 未來擴充方向
+
+- **PingMe 多通路通知**：保留目前的 Pushover 緊急重複提醒，未來可選擇透過 [PingMe](https://github.com/kha7iq/pingme) 路由至 Telegram、Email、Discord、LINE 等額外通知管道。
