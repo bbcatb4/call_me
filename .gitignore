@@ -1,0 +1,17 @@
+# Local configuration and credentials
+LineDutyNotifier/appsettings.json
+.env
+.env.*
+!.env.example
+
+# Notification content and exported conversations
+LineDutyNotifier/logs/
+*.log
+\[LINE\]*.txt
+
+# Local editor and operating-system files
+.vscode/
+.idea/
+*.user
+Thumbs.db
+Desktop.ini
