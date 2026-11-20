@@ -1,11 +1,14 @@
 # Local configuration and credentials
 LineDutyNotifier/appsettings.json
+LineDutyBot/dutybot.settings.json
+LineDutyBot/state/
 .env
 .env.*
 !.env.example
 
 # Notification content and exported conversations
 LineDutyNotifier/logs/
+LineDutyNotifier/state/
 *.log
 \[LINE\]*.txt
 
@@ -15,3 +18,28 @@ LineDutyNotifier/logs/
 *.user
 Thumbs.db
 Desktop.ini
+
+# Machine-local launcher shortcut (contains an absolute workspace path)
+/開啟監測儀表板.lnk
+/.tools/
+/dist/
+/artifacts/
+LineDutyLauncher/bin/
+LineDutyLauncher/obj/
+*.ldntransfer
+
+# Local manuals, previews, temporary files, and runtime control state
+/output/
+/tmp/
+/=ro
+LineDutyNotifier/control.json
+**/bin/
+**/obj/
+*.pfx
+*.p12
+*.key
+*.pem
+*.db
+*.db-shm
+*.db-wal
+*.dat

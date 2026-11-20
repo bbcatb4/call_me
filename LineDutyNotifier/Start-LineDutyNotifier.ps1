@@ -1,126 +1,144 @@
 ﻿# 在 Windows PowerShell 5.1 執行：powershell.exe -ExecutionPolicy Bypass -File .\Start-LineDutyNotifier.ps1
-param([string]$ConfigPath = (Join-Path $PSScriptRoot 'appsettings.json'))
-
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$script:Settings = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$script:Seen = New-Object 'System.Collections.Generic.HashSet[string]'
-$script:ContextByGroup = @{}
-$script:LastPushoverAlertByGroup = @{}
-$script:LogDirectory = Join-Path $PSScriptRoot 'logs'
-New-Item -ItemType Directory -Path $script:LogDirectory -Force | Out-Null
-$script:Tray = New-Object System.Windows.Forms.NotifyIcon
-$script:Tray.Icon = [System.Drawing.SystemIcons]::Exclamation
-$script:Tray.Visible = $true
-$script:Tray.Text = 'LINE 出勤通知監測器'
-
-function Write-MonitorLog([string]$Message) {
-    $path = Join-Path $script:LogDirectory ("monitor-{0:yyyy-MM-dd}.log" -f (Get-Date))
-    Add-Content -LiteralPath $path -Value ("{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $Message) -Encoding UTF8
-}
-function Find-Term($Terms, [string]$Text) {
-    foreach ($term in $Terms) { if ($term -and $Text.IndexOf([string]$term, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return [string]$term } }
-    return $null
-}
-function Show-Alert([string]$Title, [string]$Message, [System.Windows.Forms.ToolTipIcon]$Icon) {
-    [System.Media.SystemSounds]::Exclamation.Play()
-    $script:Tray.BalloonTipTitle = $Title
-    $script:Tray.BalloonTipText = $Message.Substring(0, [Math]::Min(250, $Message.Length))
-    $script:Tray.BalloonTipIcon = $Icon
-    $script:Tray.ShowBalloonTip([Math]::Max(3000, [int]$script:Settings.AlertDurationSeconds * 1000))
-}
-function Add-Context([string]$Group, [string]$Text) {
-    if (-not $script:ContextByGroup.ContainsKey($Group)) { $script:ContextByGroup[$Group] = New-Object 'System.Collections.Generic.Queue[string]' }
-    $queue = $script:ContextByGroup[$Group]
-    $queue.Enqueue(("{0:HH:mm} {1}" -f (Get-Date), $Text))
-    $limit = [Math]::Max(1, [int]$script:Settings.Ai.ContextMessageLimit)
-    while ($queue.Count -gt $limit) { [void]$queue.Dequeue() }
-    return @($queue.ToArray())
-}
-function Invoke-AiAssessment([string]$Group, [string]$Text, [string]$LocalLevel, [string]$LocalReason, [string[]]$Context) {
-    if (-not $script:Settings.Ai.Enabled) { return $null }
-    $keyName = [string]$script:Settings.Ai.ApiKeyEnvironmentVariable
-    $apiKey = [Environment]::GetEnvironmentVariable($keyName, 'User')
-    if (-not $apiKey) { $apiKey = [Environment]::GetEnvironmentVariable($keyName, 'Process') }
-    if (-not $apiKey) { Write-MonitorLog "AI 未執行：找不到環境變數 $keyName"; return $null }
-    $schema = @{ type='object'; additionalProperties=$false; properties=@{
-        status=@{ type='string'; enum=@('confirmed','uncertain','negative','none') }
-        date=@{ type=@('string','null') }; shift=@{ type=@('string','null') }; time=@{ type=@('string','null') }
-        role=@{ type=@('string','null') }; person=@{ type=@('string','null') }; staffing_need=@{ type=@('string','null') }
-        confidence=@{ type='string'; enum=@('high','medium','low') }; reason=@{ type='string' }
-    }; required=@('status','date','shift','time','role','person','staffing_need','confidence','reason') }
-    $instructions = '你是台灣醫療排班通知的審核助手。僅根據提供的通知上下文判讀。找出出勤需求與回覆是否配對，擷取日期、班別、時間、職務、人員與缺額需求。若回覆文字中明確出現人名，例如「小美，我可以支援」，person 必須填入「小美」；未出現人名時才填 null。只有明確承諾且可對應需求時，status 才能是 confirmed；「應該可以」、「再看看」一律 uncertain。無法判斷時不可臆測，欄位填 null。'
-    $input = "群組：$Group`n本機初判：$LocalLevel（$LocalReason）`n最近候選通知：`n" + ($Context -join "`n") + "`n本次通知：$Text"
-    $payload = @{ model=[string]$script:Settings.Ai.Model; store=$false; instructions=$instructions; input=$input; text=@{ format=@{ type='json_schema'; name='duty_assessment'; strict=$true; schema=$schema } } } | ConvertTo-Json -Depth 20
-    try {
-        $response = Invoke-RestMethod -Method Post -Uri ([string]$script:Settings.Ai.Endpoint) -Headers @{ Authorization = "Bearer $apiKey" } -ContentType 'application/json' -Body $payload -TimeoutSec ([int]$script:Settings.Ai.TimeoutSeconds)
-        $jsonText = $null
-        foreach ($item in @($response.output)) { foreach ($content in @($item.content)) { if ($content.type -eq 'output_text') { $jsonText = $content.text; break } } }
-        if (-not $jsonText) { throw 'AI 回應未包含結構化文字' }
-        return ($jsonText | ConvertFrom-Json)
-    } catch { Write-MonitorLog ('AI 判讀失敗，改用本機規則：' + $_.Exception.Message); return $null }
-}
-function Invoke-PushoverAlert([string]$Group, [string]$Level, [string]$Message) {
-    if (-not $script:Settings.Pushover.Enabled) { return }
-    if ($script:Settings.Pushover.AlertLevels -notcontains $Level) { return }
-    $lastSent = $script:LastPushoverAlertByGroup[$Group]
-    if ($lastSent -and ((Get-Date) - $lastSent).TotalSeconds -lt [int]$script:Settings.Pushover.CooldownSeconds) {
-        Write-MonitorLog "Pushover 略過：$Group 仍在冷卻時間內"
-        return
+param([string]$ConfigPath=(Join-Path $PSScriptRoot 'appsettings.json'),
+    [ValidateSet('Collector','Classifier','Sender','Receipts','Scheduler','Host')][string]$Role='Collector', [switch]$Once,
+    [string]$HostInstanceId='',[string]$WorkerInstanceId='',[object]$WorkerControl=$null)
+$ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Notifier.Core.ps1')
+Initialize-Notifier $ConfigPath
+$script:WorkerControl=$WorkerControl
+$script:UseWorkIndex=$true
+if(-not $WorkerInstanceId){$WorkerInstanceId=[guid]::NewGuid().ToString('N')}
+if($Role -eq 'Host' -and -not $HostInstanceId){$HostInstanceId=[guid]::NewGuid().ToString('N')}
+if(Test-NotifierPaused){exit 0}
+$identity=(Get-EventHash $script:StateRoot).Substring(0,20)
+$mutex=New-Object Threading.Mutex($false, ("Local\LineDutyNotifier-$identity-$Role"))
+$owned=$false
+try{$owned=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$owned=$true}
+if(-not $owned){$mutex.Dispose();exit 0}
+$children=@{}
+$script:LastReadUtc=''
+$script:LastReadError=''
+$script:LastHealth=[datetime]::MinValue
+$script:Polls=0
+$script:Saved=0
+function Get-DatabaseRows {
+    $db=[string]$script:Settings.NotificationDatabase.DatabasePath
+    $sqlite=[string]$script:Settings.NotificationDatabase.SqlitePath
+    if(-not (Test-Path -LiteralPath $db) -or -not (Test-Path -LiteralPath $sqlite)){throw 'DatabaseOrSqliteMissing'}
+    $hours=[int](Get-Option $script:Settings.Reliability 'RecoveryLookbackHours' 24)
+    $cutoff=[datetime]::UtcNow.AddHours(-$hours).ToFileTimeUtc()
+    $controlPath=Join-Path (Split-Path $ConfigPath) 'control.json'
+    if(Test-Path -LiteralPath $controlPath){
+        $control=Get-Content -LiteralPath $controlPath -Raw -Encoding UTF8|ConvertFrom-Json
+        if($control.ResumeAfterUtc){$cutoff=[Math]::Max($cutoff,([datetime]$control.ResumeAfterUtc).ToUniversalTime().ToFileTimeUtc())}
     }
-    $appToken = [Environment]::GetEnvironmentVariable([string]$script:Settings.Pushover.AppTokenEnvironmentVariable, 'User')
-    $userKey = [Environment]::GetEnvironmentVariable([string]$script:Settings.Pushover.UserKeyEnvironmentVariable, 'User')
-    if (-not $appToken -or -not $userKey) {
-        Write-MonitorLog 'Pushover 未執行：找不到 APP_TOKEN 或 USER_KEY 環境變數'
-        return
-    }
-    $body = @{ token=$appToken; user=$userKey; title='出勤確認提醒'; message=("群組：$Group`n$Message"); priority=2; retry=[int]$script:Settings.Pushover.RetrySeconds; expire=[int]$script:Settings.Pushover.ExpireSeconds; sound=[string]$script:Settings.Pushover.Sound }
-    try {
-        $response = Invoke-RestMethod -Method Post -Uri 'https://api.pushover.net/1/messages.json' -Body $body -TimeoutSec 20
-        $script:LastPushoverAlertByGroup[$Group] = Get-Date
-        Write-MonitorLog "Pushover 已送出緊急通知；receipt：$($response.receipt)"
-    } catch { Write-MonitorLog ('Pushover 傳送失敗：' + $_.Exception.Message) }
-}
-function Test-LineNotification([System.Windows.Automation.AutomationElement]$Root) {
-    try {
-        $process = [System.Diagnostics.Process]::GetProcessById($Root.Current.ProcessId).ProcessName
-        if ($process -notmatch 'ShellExperienceHost|Line') { return }
-        $names = New-Object 'System.Collections.Generic.List[string]'
-        $addName = { param($item) try { $name = $item.Current.Name.Trim(); if ($name -and -not $names.Contains($name)) { $names.Add($name) } } catch { } }
-        & $addName $Root
-        foreach ($item in $Root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) { & $addName $item }
-        $text = ($names -join ' ').Trim()
-        if (-not $text) { return }
-        $group = Find-Term $script:Settings.TargetGroupNames $text
-        if (-not $group) { return }
-        if ($process -notmatch 'Line' -and $text -notmatch 'LINE') { return }
-        $key = "$process|$text"
-        if (-not $script:Seen.Add($key)) { return }
-        if ($script:Seen.Count -gt 200) { $script:Seen.Clear() }
-        $context = Add-Context $group $text
-        $level = 'None'; $reason = '未偵測到出勤語意'; $icon = [System.Windows.Forms.ToolTipIcon]::Info
-        if ($term = Find-Term $script:Settings.NegativeTerms $text) { $level = 'Negative'; $reason = "偵測到否定詞：$term"; $icon = [System.Windows.Forms.ToolTipIcon]::Error }
-        elseif ($term = Find-Term $script:Settings.HighConfidenceTerms $text) { $level = 'Confirmed'; $reason = "偵測到確認語句：$term" }
-        elseif ($term = Find-Term $script:Settings.UncertainTerms $text) { $level = 'Uncertain'; $reason = "偵測到不確定語句：$term"; $icon = [System.Windows.Forms.ToolTipIcon]::Warning }
-        elseif ($term = Find-Term $script:Settings.RequiredContextTerms $text) { $level = 'Uncertain'; $reason = "偵測到出勤相關內容：$term"; $icon = [System.Windows.Forms.ToolTipIcon]::Warning }
-        if ($level -ne 'None') {
-            $ai = Invoke-AiAssessment $group $text $level $reason $context
-            if ($ai) {
-                $level = switch ($ai.status) { 'confirmed' { 'Confirmed' } 'negative' { 'Negative' } 'uncertain' { 'Uncertain' } default { 'None' } }
-                $reason = "AI：$($ai.reason)｜日期：$($ai.date)｜班別：$($ai.shift)｜時間：$($ai.time)｜職務：$($ai.role)｜人員：$($ai.person)｜需求：$($ai.staffing_need)｜信心：$($ai.confidence)"
-                $icon = switch ($level) { 'Negative' { [System.Windows.Forms.ToolTipIcon]::Error } 'Uncertain' { [System.Windows.Forms.ToolTipIcon]::Warning } default { [System.Windows.Forms.ToolTipIcon]::Info } }
+    $query="SELECT n.[Order] AS sort_order,n.ArrivalTime AS arrival_time,h.PrimaryId AS app_id,hex(n.Payload) AS payload_hex FROM Notification n JOIN NotificationHandler h ON h.RecordId=n.HandlerId WHERE h.PrimaryId LIKE '%LINE%' COLLATE NOCASE AND n.Payload IS NOT NULL AND n.ArrivalTime >= $cutoff ORDER BY n.[Order];"
+    $attempts=[Math]::Max(1,[int](Get-Option $script:Settings.NotificationDatabase 'RetryCount' 4))
+    for($attempt=1;$attempt -le $attempts;$attempt++){
+        $path=Join-Path (Join-Path $script:StateRoot 'snapshot') ([guid]::NewGuid().ToString('N')+'.db')
+        try {
+            Copy-Item -LiteralPath $db -Destination $path -ErrorAction Stop
+            if(Test-Path -LiteralPath ($db+'-wal')){Copy-Item -LiteralPath ($db+'-wal') -Destination ($path+'-wal') -ErrorAction Stop}
+            $info=New-Object Diagnostics.ProcessStartInfo
+            $info.FileName=$sqlite
+            $info.Arguments='-json "'+$path+'" "'+$query+'"'
+            $info.UseShellExecute=$false;$info.CreateNoWindow=$true
+            $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+            $process=New-Object Diagnostics.Process;$process.StartInfo=$info
+            try {
+                [void]$process.Start()
+                $outputTask=$process.StandardOutput.ReadToEndAsync()
+                $errorTask=$process.StandardError.ReadToEndAsync()
+                if(-not $process.WaitForExit(10000)){$process.Kill();$process.WaitForExit();throw 'SqliteTimeout'}
+                $output=$outputTask.GetAwaiter().GetResult()
+                [void]$errorTask.GetAwaiter().GetResult()
+                if($process.ExitCode -ne 0){throw 'SqliteReadFailed'}
+            }finally{$process.Dispose()}
+            if(-not $output){return @()}
+            return @($output | ConvertFrom-Json)
+        }catch{
+            if($attempt -eq $attempts){throw}
+            Start-Sleep -Milliseconds ([int](Get-Option $script:Settings.NotificationDatabase 'RetryDelayMilliseconds' 250))
+        }finally{
+            foreach($suffix in @('','-wal','-shm','-journal')){
+                $temporaryFile=$path+$suffix
+                if([IO.File]::Exists($temporaryFile)){[IO.File]::Delete($temporaryFile)}
             }
         }
-        if ($script:Settings.LogAllCandidateNotifications) { Write-MonitorLog "[$level] $group | $reason | $text" }
-        Invoke-PushoverAlert $group $level $reason
-        if ($level -ne 'None') { Show-Alert ("LINE 出勤：" + $level) ("群組：$group`n$reason`n$text") $icon }
-    } catch { Write-MonitorLog ('讀取通知失敗：' + $_.Exception.Message) }
+    }
 }
-$handler = [System.Windows.Automation.AutomationEventHandler]{ param($sender, $eventArgs) Test-LineNotification $sender }
-[System.Windows.Automation.Automation]::AddAutomationEventHandler([System.Windows.Automation.WindowPattern]::WindowOpenedEvent, [System.Windows.Automation.AutomationElement]::RootElement, [System.Windows.Automation.TreeScope]::Subtree, $handler)
-Write-MonitorLog '監測已啟動。請保持此 PowerShell 視窗開啟。'
-Write-Host 'LINE 出勤通知監測中…按 Ctrl+C 結束。' -ForegroundColor Green
-try { while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 } }
-finally { [System.Windows.Automation.Automation]::RemoveAutomationEventHandler([System.Windows.Automation.WindowPattern]::WindowOpenedEvent, [System.Windows.Automation.AutomationElement]::RootElement, $handler); $script:Tray.Dispose() }
+function Write-WorkerHealth {
+    if(([datetime]::UtcNow-$script:LastHealth).TotalSeconds -lt 30){return}
+    $script:LastHealth=[datetime]::UtcNow
+    try{Write-PerformanceSample $Role}catch{Write-Audit 'PERFORMANCE_LOG_FAILED' '' 'metrics_unavailable=true'}
+    Write-State (Get-StatePath 'health' $Role) ([pscustomobject]@{
+        Role=$Role;Pid=$PID;HeartbeatUtc=(Get-UtcStamp);Polls=$script:Polls;ControlProtocol=1;RuntimeProtocol=2;HostInstanceId=$HostInstanceId;WorkerInstanceId=$WorkerInstanceId;
+        Saved=$script:Saved;LastSuccessfulReadUtc=$script:LastReadUtc;LastReadError=$script:LastReadError;Performance=$script:Performance;PerformanceProtocol=1
+    })
+}
+function Ensure-Worker([string]$WorkerRole) {
+    if($children.ContainsKey($WorkerRole) -and -not $children[$WorkerRole].HasExited){return}
+    if($children.ContainsKey($WorkerRole)){$children[$WorkerRole].Dispose();$children.Remove($WorkerRole)}
+    $healthPath=Get-StatePath 'health' $WorkerRole
+    if(Test-Path $healthPath){
+        $state=Read-State $healthPath
+        if(([datetime]::UtcNow-([datetime]$state.HeartbeatUtc).ToUniversalTime()).TotalSeconds -lt 120){
+            $candidate=Get-CimInstance Win32_Process -Filter ('ProcessId='+[int]$state.Pid) -ErrorAction SilentlyContinue
+            $expected=Join-Path $PSScriptRoot 'Start-LineDutyNotifier.ps1'
+            if($candidate -and $candidate.CommandLine -match ('(?i)-File\s+"'+[regex]::Escape($expected)+'"') -and $candidate.CommandLine -match ('(?i)-ConfigPath\s+"'+[regex]::Escape($ConfigPath)+'"') -and $candidate.CommandLine -match ('(?i)-Role\s+'+$WorkerRole+'(?:\s|$)') -and ([datetime]$candidate.CreationDate).ToUniversalTime() -le ([datetime]$state.HeartbeatUtc).ToUniversalTime().AddSeconds(2)){return}
+        }
+    }
+    $entry=Join-Path $PSScriptRoot 'Start-LineDutyNotifier.ps1'
+    $arguments='-NoProfile -ExecutionPolicy Bypass -File "'+$entry+'" -ConfigPath "'+$ConfigPath+'" -Role '+$WorkerRole
+    $children[$WorkerRole]=Start-Process powershell.exe -ArgumentList $arguments -WindowStyle Hidden -PassThru
+    Write-Audit 'WORKER_STARTED' '' ("role=$WorkerRole; pid=$($children[$WorkerRole].Id)")
+}
+try{
+    Write-Audit 'STARTED' '' ("role=$Role; pid=$PID")
+    if($Role -eq 'Host'){Invoke-SharedWorkerHost $ConfigPath $HostInstanceId;return}
+    do{
+        if(Test-NotifierPaused){break}
+        if($script:WorkerControl){$script:WorkerControl.LastProgress=Get-PerformanceTick}
+        Write-WorkerHealth
+        try{
+            switch($Role){
+                'Collector'{
+                    if(-not $Once){
+                        if((Get-ExecutionMode) -eq 'SharedHost'){Ensure-Worker 'Host'}
+                        else{Ensure-Worker 'Classifier';Ensure-Worker 'Sender';Ensure-Worker 'Receipts';if(Test-TeamEnabled){Ensure-Worker 'Scheduler'}}
+                    }
+                    $script:Polls++
+                    $signature=Get-DatabaseProbeSignature ([string]$script:Settings.NotificationDatabase.DatabasePath) ([string]$script:Settings.NotificationDatabase.SqlitePath)
+                    if(-not (Test-DatabaseScanRequired $signature)){$script:DatabaseSkips++;break}
+                    $rows=Get-DatabaseRows
+                    $complete=$true
+                    foreach($row in $rows){
+                        if(Test-NotifierPaused){$complete=$false;break}
+                        try{
+                            $event=Convert-NotificationRow $row
+                            if($null -ne $event -and (Save-IncomingEvent $event)){$script:Saved++}
+                        }catch{$complete=$false;Write-Audit 'COLLECT_EVENT_FAILED' ([string]$row.sort_order) 'will_rescan=true'}
+                    }
+                    if(-not $complete){$script:DatabaseScanTick=-1;throw 'CollectionIncomplete'}
+                    Complete-DatabaseScan $signature
+                    $script:LastReadUtc=Get-UtcStamp;$script:LastReadError=''
+                }
+                'Classifier'{Invoke-ClassifierPass}
+                'Sender'{Invoke-SenderPass}
+                'Receipts'{Invoke-ReceiptPass}
+                'Scheduler'{Invoke-TeamSchedulerPass;$script:LastReadUtc=Get-UtcStamp;$script:LastReadError=''}
+            }
+        }catch{
+            if($Role -eq 'Collector'){$script:DatabaseScanTick=-1}
+            $script:LastReadError=$_.Exception.GetType().Name
+            Write-Audit 'WORKER_ERROR' '' ("role=$Role; error_type=$($script:LastReadError)")
+        }
+        if(-not $Once){
+            $delay=if($Role -eq 'Collector'){[Math]::Max(250,[int]$script:Settings.NotificationDatabase.PollMilliseconds)}elseif($Role -eq 'Scheduler'){5000}else{500}
+            Start-Sleep -Milliseconds $delay
+        }
+    }while(-not $Once)
+}finally{
+    if($Role -ne 'Host'){$script:LastHealth=[datetime]::MinValue;Write-WorkerHealth}
+    if($owned){$mutex.ReleaseMutex()};$mutex.Dispose()
+}

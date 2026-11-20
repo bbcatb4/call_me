@@ -1,0 +1,32 @@
+{
+  "ListenPrefix": "http://+:8080/",
+  "WebhookPath": "line/webhook",
+  "StatePath": "state/dutybot-state.json",
+  "RetentionDays": 30,
+  "AllowedGroupIds": [],
+  "AdministratorUserIds": [],
+  "DefaultAdministratorUserIds": [],
+  "ContextMessageLimit": 6,
+  "EscalationMinutes": 10,
+  "PollSeconds": 20,
+  "Ai": {
+    "Enabled": false,
+    "Model": "gpt-5-mini",
+    "TimeoutSeconds": 20,
+    "MinimumConfidence": "high"
+  },
+  "Pushover": {
+    "Enabled": false,
+    "AppTokenEnvironmentVariable": "PUSHOVER_APP_TOKEN",
+    "UserKeyEnvironmentVariables": ["PUSHOVER_USER_KEY"],
+    "RetrySeconds": 30,
+    "ExpireSeconds": 1800,
+    "Sound": "persistent"
+  },
+  "Rules": {
+    "RequiredContextTerms": ["夜班", "出勤", "上班", "代班", "接刀", "入鍋", "oncall", "值班", "到院", "急刀", "手術", "器械", "消毒", "NPO"],
+    "HighConfidenceTerms": ["確認出勤", "可以出勤", "可以上班", "我會到", "我可以上", "我來上", "請出勤", "可以出門了", "我會先過去", "先到院", "確定要先接", "要開"],
+    "UncertainTerms": ["應該可以", "可能可以", "我看看", "晚點回覆", "再確認", "幾點可以接", "什麼時候能接", "等患者到院", "再等通知", "要等器械", "要再討論"],
+    "NegativeTerms": ["不能上", "沒辦法", "不行", "無法出勤", "已有安排", "手術取消", "取消喔", "不用出來", "又猶豫", "再討論一下"]
+  }
+}

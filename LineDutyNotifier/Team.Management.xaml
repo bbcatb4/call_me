@@ -1,0 +1,50 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="接刀排程與通知管理" Width="1180" Height="830" MinWidth="960" MinHeight="650" WindowStartupLocation="CenterScreen" Background="#F3F6FA" FontFamily="Microsoft JhengHei UI, Segoe UI" FontSize="14">
+ <Window.Resources>
+  <Style TargetType="Button"><Setter Property="Padding" Value="12,8"/><Setter Property="Margin" Value="0,0,8,6"/><Setter Property="Background" Value="#163E63"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderThickness" Value="0"/></Style>
+  <Style TargetType="TextBox"><Setter Property="Padding" Value="6"/><Setter Property="Margin" Value="0,4,10,10"/></Style>
+  <Style TargetType="DataGrid"><Setter Property="AutoGenerateColumns" Value="False"/><Setter Property="CanUserAddRows" Value="False"/><Setter Property="RowHeaderWidth" Value="0"/><Setter Property="Background" Value="White"/><Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="HorizontalGridLinesBrush" Value="#E2E8F0"/></Style>
+ </Window.Resources>
+ <DockPanel Margin="22" Background="#F3F6FA">
+  <StackPanel DockPanel.Dock="Top"><TextBlock Text="接刀排程與通知管理" FontSize="26" FontWeight="Bold" Foreground="#163E63"/><TextBlock Name="TeamSummary" Margin="0,8,0,12" Text="讀取中…"/></StackPanel>
+  <TextBlock DockPanel.Dock="Bottom" Name="TeamStatus" Text="選擇人員或接刀排程開始管理。" TextWrapping="Wrap" Foreground="#475569" Margin="0,12,0,0"/>
+  <TabControl Name="TeamTabs">
+   <TabItem Header="人員管理"><Grid Margin="14"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DataGrid Name="PeopleTable" IsReadOnly="True"><DataGrid.Columns>
+     <DataGridTextColumn Header="姓名" Binding="{Binding Name}" Width="220"/><DataGridTextColumn Header="別名" Binding="{Binding Aliases}" Width="180"/>
+     <DataGridCheckBoxColumn Header="啟用" Binding="{Binding Enabled}" Width="70"/><DataGridCheckBoxColumn Header="管理者" Binding="{Binding IsAdmin}" Width="85"/><DataGridCheckBoxColumn Header="全時段當班" Binding="{Binding AlwaysOnDuty}" Width="110"/>
+     <DataGridTextColumn Header="提前分鐘" Binding="{Binding LeadMinutes}" Width="100"/><DataGridCheckBoxColumn Header="收件資料已設定" Binding="{Binding KeySet}" Width="150"/>
+    </DataGrid.Columns></DataGrid>
+    <StackPanel Grid.Row="1" Margin="0,14,0,0">
+     <WrapPanel><StackPanel Width="230"><TextBlock Text="姓名"/><TextBox Name="PersonName"/></StackPanel><StackPanel Width="280"><TextBlock Text="班表別名（逗號分隔）"/><TextBox Name="PersonAliases"/></StackPanel><StackPanel Width="130"><TextBlock Text="提前分鐘"/><TextBox Name="PersonLead" Text="60"/></StackPanel><StackPanel Width="290"><TextBlock Text="Pushover 收件資料（留空保留原值）"/><PasswordBox Name="PersonKey" Padding="6" Margin="0,4,0,10"/></StackPanel></WrapPanel>
+     <WrapPanel Margin="0,0,0,12"><CheckBox Name="PersonEnabled" Content="啟用" IsChecked="True" Margin="0,0,24,0"/><CheckBox Name="PersonAdmin" Content="管理者" Margin="0,0,24,0"/><CheckBox Name="PersonAlways" Content="全時段當班（所有日期）"/></WrapPanel>
+     <WrapPanel><Button Name="NewPerson" Content="新增人員"/><Button Name="SavePerson" Content="儲存人員"/><Button Name="TestPerson" Content="傳送一般測試通知"/><Button Name="RefreshTeam" Content="重新整理"/></WrapPanel>
+     <WrapPanel><Button Name="EmergencyTestPerson" Content="傳送緊急測試（2 分鐘）" Background="#A93827"/><Button Name="StopEmergencyTest" Content="停止此人的緊急測試"/><TextBlock Text="只測選取人員，不影響正式出勤；狀態請看個別通知紀錄。" VerticalAlignment="Center" TextWrapping="Wrap"/></WrapPanel>
+    </StackPanel>
+   </Grid></TabItem>
+   <TabItem Name="RosterTab" Header="班表匯入與核對"><DockPanel Margin="14">
+    <StackPanel DockPanel.Dock="Top"><WrapPanel><Button Name="ImportRoster" Content="選擇圖片／PDF"/><Button Name="RecognizeRoster" Content="AI 辨識為草稿"/><ComboBox Name="DraftList" Width="240" DisplayMemberPath="Label" Margin="0,0,8,6"/><Button Name="LoadDraft" Content="載入草稿"/><Button Name="SaveDraft" Content="儲存草稿"/><Button Name="PublishRoster" Content="確認並發布"/></WrapPanel>
+     <WrapPanel><TextBlock Text="涵蓋日期" VerticalAlignment="Center"/><TextBox Name="PeriodStart" Width="140" ToolTip="yyyy-MM-dd"/><TextBlock Text="至" VerticalAlignment="Center"/><TextBox Name="PeriodEnd" Width="140" ToolTip="yyyy-MM-dd"/><TextBlock Text="發布會取代此期間起班的舊班次。" VerticalAlignment="Center"/></WrapPanel>
+     <TextBlock Name="RosterNotes" TextWrapping="Wrap" Foreground="#AD650C" Margin="0,0,0,8"/>
+    </StackPanel>
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="0.9*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1.4*"/></Grid.ColumnDefinitions>
+     <DockPanel><WrapPanel DockPanel.Dock="Top"><Button Name="PrevPage" Content="上一頁"/><Button Name="NextPage" Content="下一頁"/><TextBlock Name="PageLabel" Margin="8,8,0,0"/></WrapPanel><ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"><Image Name="RosterImage" Stretch="Uniform"/></ScrollViewer></DockPanel>
+     <DockPanel Grid.Column="2"><StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+      <TextBlock Text="班別時間批次套用（結束不晚於開始時，視為隔日）" TextWrapping="Wrap"/>
+      <WrapPanel><TextBox Name="ShiftCode" Width="90" ToolTip="班別代碼"/><TextBox Name="ShiftStart" Width="90" Text="08:00"/><TextBox Name="ShiftEnd" Width="90" Text="17:00"/><Button Name="ApplyShift" Content="套用班別時間"/></WrapPanel>
+      <WrapPanel><Button Name="AddRosterRow" Content="新增一列"/><Button Name="DeleteRosterRow" Content="移除選取列"/></WrapPanel>
+     </StackPanel>
+     <DataGrid Name="RosterRows" CanUserDeleteRows="True"><DataGrid.Columns>
+      <DataGridTextColumn Header="姓名／別名" Binding="{Binding Name}" Width="95"/><DataGridTextColumn Header="日期" Binding="{Binding Date}" Width="100"/><DataGridTextColumn Header="班別" Binding="{Binding Shift}" Width="65"/>
+      <DataGridTextColumn Header="開始 yyyy-MM-dd HH:mm" Binding="{Binding Start}" Width="170"/><DataGridTextColumn Header="結束 yyyy-MM-dd HH:mm" Binding="{Binding End}" Width="170"/><DataGridTextColumn Header="核對事項" Binding="{Binding Note}" Width="160"/>
+     </DataGrid.Columns></DataGrid></DockPanel>
+    </Grid>
+   </DockPanel></TabItem>
+   <TabItem Header="接刀排程與試跑"><DockPanel Margin="14"><StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+    <TextBlock Text="選取排程後，可補上精確時間、修正改期，或確認取消；修改會重新分派通知。" TextWrapping="Wrap"/>
+    <WrapPanel><TextBox Name="ScheduleTime" Width="210" ToolTip="yyyy-MM-dd HH:mm"/><Button Name="SaveSchedule" Content="確認／修改時間"/><Button Name="CancelSchedule" Content="確認取消選取排程"/><Button Name="PreviewRoutes" Content="試跑選取排程"/></WrapPanel>
+    <TextBlock Name="ScheduleContext" TextWrapping="Wrap" MaxHeight="80" Margin="0,0,0,8"/><WrapPanel><TextBlock Text="異動待核對時，請選擇要修改／取消的原排程：" VerticalAlignment="Center"/><ComboBox Name="ChangeTarget" Width="500" DisplayMemberPath="Label" Margin="6"/></WrapPanel><TextBlock Name="RoutePreview" TextWrapping="Wrap" Foreground="#163E63"/>
+   </StackPanel><DataGrid Name="ScheduleTable" IsReadOnly="True"><DataGrid.Columns><DataGridTextColumn Header="排程識別碼" Binding="{Binding Id}" Width="180"/><DataGridTextColumn Header="接刀時間" Binding="{Binding Time}" Width="170"/><DataGridTextColumn Header="需求" Binding="{Binding KindLabel}" Width="95"/><DataGridTextColumn Header="狀態" Binding="{Binding StatusLabel}" Width="120"/><DataGridTextColumn Header="分派依據" Binding="{Binding ReasonLabel}" Width="*"/><DataGridTextColumn Header="建立時間" Binding="{Binding Created}" Width="170"/></DataGrid.Columns></DataGrid></DockPanel></TabItem>
+   <TabItem Header="個別通知紀錄"><Grid Margin="14"><DataGrid Name="DeliveryTable" IsReadOnly="True"><DataGrid.Columns><DataGridTextColumn Header="人員" Binding="{Binding Person}" Width="130"/><DataGridTextColumn Header="提醒階段" Binding="{Binding StageLabel}" Width="120"/><DataGridTextColumn Header="狀態" Binding="{Binding StatusLabel}" Width="110"/><DataGridTextColumn Header="排定／重試時間" Binding="{Binding Next}" Width="170"/><DataGridTextColumn Header="確認時間" Binding="{Binding Acknowledged}" Width="170"/><DataGridTextColumn Header="嘗試次數" Binding="{Binding Attempts}" Width="80"/><DataGridTextColumn Header="排程識別碼" Binding="{Binding ScheduleId}" Width="*"/></DataGrid.Columns></DataGrid></Grid></TabItem>
+  </TabControl>
+ </DockPanel>
+</Window>

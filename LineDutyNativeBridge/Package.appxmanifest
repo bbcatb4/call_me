@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap uap3 rescap">
+  <Identity Name="LineDutyNativeBridge" Publisher="CN=LineDutyNotifier" Version="0.1.0.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>LINE 出勤通知監測器</DisplayName>
+    <PublisherDisplayName>LineDutyNotifier</PublisherDisplayName>
+    <Description>讀取 LINE Windows 通知並交給本機出勤判讀器。</Description>
+    <Logo>Assets\logo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources><Resource Language="x-generate" /></Resources>
+  <Applications>
+    <Application Id="App" Executable="LineDutyNativeBridge.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="LINE 出勤通知監測器" Description="讀取 LINE Windows 通知" BackgroundColor="#1E4D8C" Square150x150Logo="Assets\logo.png" Square44x44Logo="Assets\logo.png" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <uap3:Capability Name="userNotificationListener" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
